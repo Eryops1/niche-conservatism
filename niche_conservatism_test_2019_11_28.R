@@ -6,44 +6,48 @@ library(stringr)
 library(rgdal)
 library(sp)
 
+test_data<-read.csv("test_data.csv", sep = ";", na.string = "") # species list
+map_trf <- readOGR("corlett_shapefiles/corlett_TRF_ext.shp")  # TRF map
 
- 
-test_data<-read.csv("test_data.csv", sep = ";", na.string = "") #species list
-cont_map <- readOGR("continents/continent.shp")  # should be TRF map
+map_cont <- readOGR("continents/continent.shp")  # continent map for testing
 
-test_data_1 <- test_data[!is.na(test_data$species) & !is.na(test_data$accepted_name_id),] # Exclude "Unplaced" taxon_status_description
-
+# Exclude "Unplaced" taxon_status_description
+test_data_1 <- test_data[!is.na(test_data$species) & !is.na(test_data$accepted_name_id),] 
 target_species <- unique(test_data_1$accepted_name_id)
 
-ptm <- proc.time() # Start the clock
-species_res <- list()
+#ptm <- proc.time() # Start the clock
 
-for(i in length(target_species)){
+# set up matrix to fill in results
+# for biomes later...
+#species_res <- matrix(nrow=length(target_species), ncol=length(grep("FID", names(map_trf))), data=NA)
+
+#species_res <- data.frame(species=target_species, freq_in=rep(NA,length(target_species)))
+species_res <- c()
+for(i in 1:length(target_species)){
   t <- test_data_1[test_data_1$accepted_name_id==target_species[i],]  # subset to one species
   u <- unique(paste(t$genus, t$species))  # get species binomial name
   occurrence_records <- data.frame()  # setup empty data frame
-  for(j in u){  # question: should this not be just one entry? is there multiple species names assigned to one id, and if so why? 
-    occurrence_records <- rbind(occurrence_records, (BIEN_occurrence_species(j, only.new.world = F))) #download data from BIEN and add to occurrence_records
+  for(j in u){
+    occurrence_records <- rbind(occurrence_records, (BIEN_occurrence_species(j, only.new.world = F))) 
   }
-  # ewww the download is incredibly slow!
-
   ######## Biome analysis ########
   occurrence_records = occurrence_records[!is.na(occurrence_records[,"latitude"]) & !is.na(occurrence_records[,"longitude"]),] # excluding NA coordinates
   occurrence_records = occurrence_records[!duplicated(occurrence_records),] # excluding repeated occurrences
   # Q: Ignore species with one occurrence point (try both with and without this line)
-  coord <- occurrence_records[,c("latitude", "longitude")] ## Q: Are species now completely mixed? A: no, the order in the dataframe is maintained
+  coord <- occurrence_records[,c("latitude", "longitude")]
   coordinates(coord) <- ~  longitude + latitude  # convert dataframe to spatial points object
-  proj4string(coord) <- proj4string(cont_map) # match projection attributes of both objects
+  proj4string(coord) <- proj4string(map_trf) # match projection attributes of both objects
   # Q: Ignore points close to biome boundaries (perhaps wait with this)
-  cont_res <- over(coord, cont_map) # matches coordinates with shapefile polygons
-  # Q: calculate proportion of occurrence points in and out of polygon boundaries --> simple table(cont_res)/nrow(cont_res) should do the trick
-  # Q: assign species name to be TRF or not based on proportion consensus (several definitions, e.g. 90 % and 50 % or 90 % and 10 % intervals below)
-  # Q: seperate for geographic region (World, Asia, Africa, Neo-tropics)
+  
+#  trf_res <- over(coord, map_trf) # matches coordinates with shapefile polygons
+  # return the number of points in each polygon:
+  trf_res <- sapply(over(map_trf, geometry(coord), returnList = TRUE), length) 
   
   # store the results for each species:
-  species_res[i] <- cont_res
+  species_res <- c(species_res, sum(trf_res)/length(coord))
+#  species_res$freq_in[species_res$species==target_species[i]] <- prop_species_trf
 }
-# plot(cont_map)
+# plot(map)
 # plot(coord, size=10, add=TRUE, col=c("blue", "red")[as.factor(occurrence_records$scrubbed_species_binomial)])
 
 
@@ -56,25 +60,25 @@ proc.time() - ptm # Stop the clock
 #download maps
 #read maps
 
-cont_map <- readOGR("C:/Users/Emil/Documents/Aarhus_University/Master's_project/Shapefiles/Corlett and Primack/Archive/corlett_TRF_ext.shp") # Retrieve shapefiles from Wolf
+map_trf <- readOGR("C:/Users/Emil/Documents/Aarhus_University/Master's_project/Shapefiles/Corlett and Primack/Archive/corlett_TRF_ext.shp") # Retrieve shapefiles from Wolf
 #shapefiles for each of the 3 maps should be read, plotted and analyzed
-#plot(world, cont_map) - sp?rg asger
+#plot(world, map_trf) - sp?rg asger
 
 coord <- all_occurrence_records[,c("latitude", "longitude")]
 coordinates(coord) <- ~ lon + lat  # convert dataframe to spatial points object
 
-proj4string(coord) <- proj4string(cont_map) # match projection attributes of both objects
+proj4string(coord) <- proj4string(map_trf) # match projection attributes of both objects
 
-cont_res <- over(coord, cont_map) # matches coordinates with shapefile polygons
+cont_res <- over(coord, map_trf) # matches coordinates with shapefile polygons
 
 
 # check results
-plot(cont_map)
+plot(map_trf)
 plot(coord, size=10, add=TRUE, col=c("blue", "red")[as.factor(species)])
 
 # world <- (directory(world_map.shp) #read hypothetical world map
 # spTransform(world, crs(+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0)) #transformation af world projektion til match TRF.
-# plot(world, cont_map) plot TRF-map over world map
+# plot(world, map) plot TRF-map over world map
 
 ### Niche assignment - Comming soon...
 
